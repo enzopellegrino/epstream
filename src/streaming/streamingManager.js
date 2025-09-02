@@ -1,6 +1,7 @@
 const EventEmitter = require('events');
 const { spawn } = require('child_process');
 const path = require('path');
+const ffmpegStatic = require('ffmpeg-static');
 
 class StreamingManager extends EventEmitter {
   constructor() {
@@ -8,41 +9,79 @@ class StreamingManager extends EventEmitter {
     this.ffmpegProcess = null;
     this.isStreaming = false;
     this.streamConfig = null;
+    this.ffmpegPath = null;
+    this.supportsSRT = false;
   }
 
-  // Check if FFmpeg is available
-  checkFFmpegAvailable() {
+  // Check if FFmpeg supports SRT protocol
+  async checkSRTSupport(ffmpegPath) {
     return new Promise((resolve) => {
-      // Try multiple possible paths
-      const possiblePaths = [
-        '/usr/local/bin/ffmpeg',
-        '/opt/homebrew/bin/ffmpeg',
-        '/Users/enzo.pellegrino/homebrew/bin/ffmpeg',
-        'ffmpeg'
-      ];
-
-      let ffmpegPath = null;
-      for (const path of possiblePaths) {
-        try {
-          const testProcess = spawn(path, ['-version']);
-          testProcess.on('close', (code) => {
-            if (code === 0 && !ffmpegPath) {
-              ffmpegPath = path;
-              resolve(ffmpegPath);
-            }
-          });
-        } catch (error) {
-          // Continue to next path
-        }
-      }
-
-      // Default fallback
-      setTimeout(() => {
-        if (!ffmpegPath) {
-          resolve('/Users/enzo.pellegrino/homebrew/bin/ffmpeg');
-        }
-      }, 1000);
+      const testProcess = spawn(ffmpegPath, ['-protocols']);
+      let output = '';
+      
+      testProcess.stdout.on('data', (data) => {
+        output += data.toString();
+      });
+      
+      testProcess.on('close', () => {
+        const supportsSRT = output.toLowerCase().includes('srt');
+        resolve(supportsSRT);
+      });
+      
+      testProcess.on('error', () => {
+        resolve(false);
+      });
     });
+  }
+
+  // Check if FFmpeg is available and find the best one
+  async checkFFmpegAvailable() {
+    console.log('🔍 Checking FFmpeg availability...');
+    
+    // Try system FFmpeg paths first (these usually have SRT support)
+    const systemPaths = process.platform === 'win32' ? [
+      'ffmpeg', // Windows PATH
+      'C:\\ffmpeg\\bin\\ffmpeg.exe',
+      'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe'
+    ] : [
+      '/usr/local/bin/ffmpeg',
+      '/opt/homebrew/bin/ffmpeg', 
+      '/Users/enzo.pellegrino/homebrew/bin/ffmpeg',
+      'ffmpeg' // System PATH
+    ];
+
+    // Test system FFmpeg paths
+    for (const ffmpegPath of systemPaths) {
+      try {
+        console.log(`🧪 Testing ${ffmpegPath}...`);
+        const testProcess = spawn(ffmpegPath, ['-version'], { stdio: 'ignore' });
+        
+        const result = await new Promise((resolve) => {
+          testProcess.on('close', (code) => resolve(code === 0));
+          testProcess.on('error', () => resolve(false));
+          setTimeout(() => resolve(false), 2000); // Timeout
+        });
+
+        if (result) {
+          const supportsSRT = await this.checkSRTSupport(ffmpegPath);
+          console.log(`✅ ${ffmpegPath} found - SRT support: ${supportsSRT}`);
+          
+          if (supportsSRT) {
+            this.ffmpegPath = ffmpegPath;
+            this.supportsSRT = true;
+            return { path: ffmpegPath, supportsSRT: true };
+          }
+        }
+      } catch (error) {
+        console.log(`❌ ${ffmpegPath} not available`);
+      }
+    }
+
+    // Fallback to ffmpeg-static (no SRT support)
+    console.log('⚠️ No system FFmpeg with SRT found, using ffmpeg-static fallback');
+    this.ffmpegPath = ffmpegStatic;
+    this.supportsSRT = false;
+    return { path: ffmpegStatic, supportsSRT: false };
   }
 
   async startStream(options) {
@@ -54,14 +93,36 @@ class StreamingManager extends EventEmitter {
 
       const { srtUrl, resolution = '1920x1080', bitrate = '5000k', preset = 'veryfast', profile = 'high', captureSource } = options;
       
-      // Get system FFmpeg path
-      const systemFFmpegPath = await this.checkFFmpegAvailable();
+      // Get the best available FFmpeg
+      const ffmpegInfo = await this.checkFFmpegAvailable();
+      const ffmpegPath = ffmpegInfo.path;
+      const supportsSRT = ffmpegInfo.supportsSRT;
 
       this.streamConfig = options;
       this.isStreaming = true;
 
-      // Build FFmpeg command for SRT streaming based on platform
+      // Check if SRT streaming is requested but not supported
+      if (srtUrl && srtUrl.startsWith('srt://') && !supportsSRT) {
+        console.warn('⚠️ SRT streaming requested but FFmpeg does not support SRT protocol');
+        this.emit('stream-warning', 'SRT protocol not supported by current FFmpeg. Please install FFmpeg with SRT support for streaming.');
+        // Could fallback to RTMP or file output, or show error to user
+        this.isStreaming = false;
+        return false;
+      }
+
+      // Build FFmpeg command based on platform and capabilities
       let ffmpegArgs = [];
+      
+      // Determine output format and destination
+      let outputFormat = 'mpegts';
+      let outputDestination = srtUrl;
+      
+      if (!supportsSRT && srtUrl && srtUrl.startsWith('srt://')) {
+        // Fallback for no SRT support - could use RTMP, file, or UDP
+        console.warn('⚠️ Fallback: Converting SRT URL to UDP for compatibility');
+        outputDestination = srtUrl.replace('srt://', 'udp://');
+        outputFormat = 'mpegts';
+      }
 
       if (process.platform === 'win32') {
         // Windows using gdigrab
@@ -79,8 +140,8 @@ class StreamingManager extends EventEmitter {
           '-pix_fmt', 'yuv420p',
           '-g', '60',
           '-keyint_min', '60',
-          '-f', 'mpegts',
-          srtUrl
+          '-f', outputFormat,
+          outputDestination
         ];
       } else if (process.platform === 'darwin') {
         // macOS: Check if it's embedded browser or regular window
@@ -102,8 +163,8 @@ class StreamingManager extends EventEmitter {
             '-vf', `scale=${resolution}`,
             '-g', '60',
             '-keyint_min', '60',
-            '-f', 'mpegts',
-            srtUrl
+            '-f', outputFormat,
+            outputDestination
           ];
         } else {
           // Standard screen capture for other windows
@@ -122,8 +183,8 @@ class StreamingManager extends EventEmitter {
             '-vf', `scale=${resolution}`,
             '-g', '60',
             '-keyint_min', '60',
-            '-f', 'mpegts',
-            srtUrl
+            '-f', outputFormat,
+            outputDestination
           ];
         }
         
@@ -146,14 +207,15 @@ class StreamingManager extends EventEmitter {
           '-pix_fmt', 'yuv420p',
           '-g', '60',
           '-keyint_min', '60',
-          '-f', 'mpegts',
-          srtUrl
+          '-f', outputFormat,
+          outputDestination
         ];
       }
 
       console.log('Starting FFmpeg with args:', ffmpegArgs);
+      console.log(`Using FFmpeg: ${ffmpegPath} (SRT support: ${supportsSRT})`);
 
-      this.ffmpegProcess = spawn(systemFFmpegPath, ffmpegArgs);
+      this.ffmpegProcess = spawn(ffmpegPath, ffmpegArgs);
 
       this.ffmpegProcess.stdout.on('data', (data) => {
         this.emit('stream-data', data.toString());

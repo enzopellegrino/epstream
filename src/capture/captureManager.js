@@ -1,9 +1,8 @@
 const ffmpeg = require('fluent-ffmpeg');
-const ffmpegPath = require('ffmpeg-static');
 const { EventEmitter } = require('events');
 const { desktopCapturer } = require('electron');
-
-ffmpeg.setFfmpegPath(ffmpegPath);
+const { spawn } = require('child_process');
+const ffmpegStatic = require('ffmpeg-static');
 
 class CaptureManager extends EventEmitter {
   constructor() {
@@ -12,12 +11,65 @@ class CaptureManager extends EventEmitter {
     this.captureStream = null;
     this.selectedSource = null;
     this.ffmpegProcess = null;
+    this.ffmpegPath = null;
+  }
+
+  // Reuse the same logic as StreamingManager for consistency
+  async checkFFmpegAvailable() {
+    console.log('🔍 CaptureManager: Checking FFmpeg availability...');
+    
+    // Try system FFmpeg paths first
+    const systemPaths = process.platform === 'win32' ? [
+      'ffmpeg',
+      'C:\\ffmpeg\\bin\\ffmpeg.exe',
+      'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe'
+    ] : [
+      '/usr/local/bin/ffmpeg',
+      '/opt/homebrew/bin/ffmpeg', 
+      '/Users/enzo.pellegrino/homebrew/bin/ffmpeg',
+      '/usr/bin/ffmpeg',
+      'ffmpeg'
+    ];
+
+    // Test system FFmpeg paths
+    for (const ffmpegPath of systemPaths) {
+      try {
+        const testProcess = spawn(ffmpegPath, ['-version'], { stdio: 'ignore' });
+        
+        const result = await new Promise((resolve) => {
+          testProcess.on('close', (code) => resolve(code === 0));
+          testProcess.on('error', () => resolve(false));
+          setTimeout(() => resolve(false), 2000);
+        });
+
+        if (result) {
+          console.log(`✅ CaptureManager: Found ${ffmpegPath}`);
+          this.ffmpegPath = ffmpegPath;
+          return ffmpegPath;
+        }
+      } catch (error) {
+        // Continue to next path
+      }
+    }
+
+    // Fallback to ffmpeg-static
+    console.log('⚠️ CaptureManager: Using ffmpeg-static fallback');
+    this.ffmpegPath = ffmpegStatic;
+    return ffmpegStatic;
   }
 
   async startCapture(options) {
     if (this.isCapturing) {
       throw new Error('Capture already in progress');
     }
+
+    // Check if system FFmpeg is available
+    const systemFFmpegPath = await this.checkFFmpegAvailable();
+    if (!systemFFmpegPath) {
+      throw new Error('FFmpeg not found. Please install FFmpeg with SRT support.');
+    }
+
+    ffmpeg.setFfmpegPath(systemFFmpegPath);
 
     try {
       const { sourceId, resolution = '1920x1080', frameRate = 30 } = options;
