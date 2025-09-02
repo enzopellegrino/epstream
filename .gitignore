@@ -1,0 +1,40 @@
+node_modules/
+dist/
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+.vscode/settings.json
+.env
+*.env.local
+*.env.development.local
+*.env.test.local
+*.env.production.local
+
+# Electron specific
+out/
+build/
+*.electron-log
+electron-debug.log
+
+# macOS specific
+.DS_Store
+*.dmg
+
+# Windows specific
+*.exe
+*.msi
+
+# Development
+.nyc_output/
+coverage/
+.cache/
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+Thumbs.db
+ehthumbs.db

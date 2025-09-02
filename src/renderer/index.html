@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:;">
+    <title>Chrome Stream Capture</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <h1>Chrome Stream Capture</h1>
+            <div class="status-bar">
+                <span id="capture-status" class="status inactive">Capture: Inactive</span>
+                <span id="stream-status" class="status inactive">Stream: Inactive</span>
+            </div>
+        </header>
+
+        <main class="main">
+            <nav class="sidebar">
+                <button class="nav-button active" data-tab="capture">
+                    <span class="icon">📹</span>
+                    Capture
+                </button>
+                <button class="nav-button" data-tab="stream">
+                    <span class="icon">📡</span>
+                    Stream
+                </button>
+                <button class="nav-button" data-tab="browser">
+                    <span class="icon">🌐</span>
+                    Browser
+                </button>
+                <button class="nav-button" data-tab="profiles">
+                    <span class="icon">⚙️</span>
+                    Profiles
+                </button>
+                <button class="nav-button" data-tab="servers">
+                    <span class="icon">🖥️</span>
+                    SRT Servers
+                </button>
+                <button class="nav-button" data-tab="logs">
+                    <span class="icon">📝</span>
+                    Logs
+                </button>
+            </nav>
+
+            <div class="content">
+                <!-- Capture Tab -->
+                <div id="capture-tab" class="tab-content active">
+                    <h2>Window Capture</h2>
+                    
+                    <div class="section">
+                        <h3>Chrome Windows</h3>
+                        <p class="help-text">
+                            ℹ️ If you have the embedded browser active, it will appear here as a capture source along with regular Chrome windows.
+                        </p>
+                        <button id="refresh-windows" class="btn btn-secondary">Refresh Windows</button>
+                        <div id="windows-list" class="windows-grid">
+                            <div class="loading">Loading Chrome windows...</div>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <h3>Capture Settings</h3>
+                        <div class="form-group">
+                            <label for="resolution-select">Resolution:</label>
+                            <select id="resolution-select">
+                                <option value="1920x1080">1920x1080 (Full HD)</option>
+                                <option value="1280x720">1280x720 (HD)</option>
+                                <option value="854x480">854x480 (SD)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="framerate-select">Frame Rate:</label>
+                            <select id="framerate-select">
+                                <option value="30">30 FPS</option>
+                                <option value="60">60 FPS</option>
+                                <option value="25">25 FPS</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="controls">
+                        <button id="start-capture" class="btn btn-primary" disabled>Start Capture</button>
+                        <button id="stop-capture" class="btn btn-danger" disabled>Stop Capture</button>
+                    </div>
+                </div>
+
+                <!-- Stream Tab -->
+                <div id="stream-tab" class="tab-content">
+                    <h2>SRT Streaming</h2>
+                    
+                    <div class="section">
+                        <h3>Stream Configuration</h3>
+                        <div class="form-group">
+                            <label for="srt-server-select">SRT Server:</label>
+                            <select id="srt-server-select">
+                                <option value="">Select SRT Server...</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="stream-key">Stream Key (optional):</label>
+                            <input type="text" id="stream-key" placeholder="Enter stream key">
+                        </div>
+                        <div class="form-group">
+                            <label for="bitrate-select">Bitrate:</label>
+                            <select id="bitrate-select">
+                                <option value="1000k">1 Mbps</option>
+                                <option value="2500k">2.5 Mbps</option>
+                                <option value="5000k" selected>5 Mbps</option>
+                                <option value="8000k">8 Mbps</option>
+                                <option value="12000k">12 Mbps</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="preset-select">Encoding Preset:</label>
+                            <select id="preset-select">
+                                <option value="ultrafast">Ultra Fast</option>
+                                <option value="veryfast" selected>Very Fast</option>
+                                <option value="fast">Fast</option>
+                                <option value="medium">Medium</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="controls">
+                        <button id="test-connection" class="btn btn-secondary">Test Connection</button>
+                        <button id="start-stream" class="btn btn-primary" disabled>Start Stream</button>
+                        <button id="stop-stream" class="btn btn-danger" disabled>Stop Stream</button>
+                    </div>
+
+                    <div class="section">
+                        <h3>Stream Status</h3>
+                        <div id="stream-info" class="info-panel">
+                            <div class="info-row">
+                                <span>Status:</span>
+                                <span id="stream-status-text">Not streaming</span>
+                            </div>
+                            <div class="info-row">
+                                <span>Server:</span>
+                                <span id="current-server">-</span>
+                            </div>
+                            <div class="info-row">
+                                <span>Bitrate:</span>
+                                <span id="current-bitrate">-</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Browser Tab -->
+                <div id="browser-tab" class="tab-content">
+                    <h2>Embedded Browser</h2>
+                    
+                    <div class="section">
+                        <h3>Navigation</h3>
+                        <div class="form-group">
+                            <label for="browser-url">URL:</label>
+                            <input type="url" id="browser-url" placeholder="https://www.youtube.com" value="https://www.youtube.com">
+                            <button id="navigate-browser" class="btn btn-primary">Navigate</button>
+                        </div>
+                        
+                        <div class="controls">
+                            <button id="toggle-browser" class="btn btn-primary">Toggle Browser</button>
+                            <button id="show-browser" class="btn btn-success">Show Browser</button>
+                            <button id="hide-browser" class="btn btn-secondary">Hide Browser</button>
+                            <button id="refresh-browser" class="btn btn-info">Refresh</button>
+                        </div>
+                        
+                        <div class="browser-info">
+                            <p><strong>Current URL:</strong> <span id="current-browser-url">None</span></p>
+                            <p><strong>Page Title:</strong> <span id="current-browser-title">None</span></p>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <h3>Quick Links</h3>
+                        <div class="quick-links">
+                            <button class="btn btn-outline quick-link" data-url="https://www.youtube.com">YouTube</button>
+                            <button class="btn btn-outline quick-link" data-url="https://www.twitch.tv">Twitch</button>
+                            <button class="btn btn-outline quick-link" data-url="https://vimeo.com">Vimeo</button>
+                            <button class="btn btn-outline quick-link" data-url="https://www.netflix.com">Netflix</button>
+                            <button class="btn btn-outline quick-link" data-url="https://meet.google.com">Google Meet</button>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <h3>Embedded Browser View</h3>
+                        <div id="browser-container" class="browser-container">
+                            <div class="browser-placeholder" id="browser-placeholder">
+                                <p>🌐 Browser not loaded</p>
+                                <p>Click "Show Browser" to load the embedded browser here</p>
+                            </div>
+                            <webview id="embedded-webview" 
+                                     style="display: none;"
+                                     nodeintegration="false"
+                                     disablewebsecurity="false"
+                                     allowpopups="true"
+                                     src="">
+                            </webview>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <h3>Capture from Browser</h3>
+                        <p class="help-text">
+                            ℹ️ The embedded browser appears in the dedicated section above. 
+                            When loaded, you can capture its content directly instead of hunting for Chrome windows.
+                        </p>
+                        <button id="capture-browser-content" class="btn btn-primary" disabled>
+                            Select Browser as Capture Source
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Profiles Tab -->
+                <div id="profiles-tab" class="tab-content">
+                    <h2>Capture Profiles</h2>
+                    
+                    <div class="section">
+                        <button id="add-profile" class="btn btn-primary">Add New Profile</button>
+                        <div id="profiles-list" class="profiles-grid">
+                            <!-- Profiles will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Servers Tab -->
+                <div id="servers-tab" class="tab-content">
+                    <h2>SRT Servers</h2>
+                    
+                    <div class="section">
+                        <button id="add-server" class="btn btn-primary">Add New Server</button>
+                        <div id="servers-list" class="servers-grid">
+                            <!-- Servers will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Logs Tab -->
+                <div id="logs-tab" class="tab-content">
+                    <h2>Application Logs</h2>
+                    
+                    <div class="section">
+                        <div class="controls">
+                            <button id="clear-logs" class="btn btn-secondary">Clear Logs</button>
+                            <button id="export-logs" class="btn btn-secondary">Export Logs</button>
+                        </div>
+                        <div id="logs-container" class="logs-panel">
+                            <!-- Logs will appear here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <div id="profile-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="profile-modal-title">Add Profile</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="profile-form">
+                    <div class="form-group">
+                        <label for="profile-name">Name:</label>
+                        <input type="text" id="profile-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="profile-description">Description:</label>
+                        <textarea id="profile-description"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="profile-resolution">Resolution:</label>
+                        <select id="profile-resolution">
+                            <option value="1920x1080">1920x1080 (Full HD)</option>
+                            <option value="1280x720">1280x720 (HD)</option>
+                            <option value="854x480">854x480 (SD)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="profile-framerate">Frame Rate:</label>
+                        <select id="profile-framerate">
+                            <option value="30">30 FPS</option>
+                            <option value="60">60 FPS</option>
+                            <option value="25">25 FPS</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="profile-bitrate">Bitrate:</label>
+                        <select id="profile-bitrate">
+                            <option value="1000k">1 Mbps</option>
+                            <option value="2500k">2.5 Mbps</option>
+                            <option value="5000k">5 Mbps</option>
+                            <option value="8000k">8 Mbps</option>
+                            <option value="12000k">12 Mbps</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="profile-server">SRT Server:</label>
+                        <select id="profile-server">
+                            <option value="">Select server...</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="cancel-profile">Cancel</button>
+                <button type="submit" class="btn btn-primary" id="save-profile">Save Profile</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="server-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="server-modal-title">Add SRT Server</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="server-form">
+                    <div class="form-group">
+                        <label for="server-name">Name:</label>
+                        <input type="text" id="server-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="server-description">Description:</label>
+                        <textarea id="server-description"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="server-host">Host:</label>
+                        <input type="text" id="server-host" required placeholder="e.g., 192.168.1.100">
+                    </div>
+                    <div class="form-group">
+                        <label for="server-port">Port:</label>
+                        <input type="number" id="server-port" value="9999" min="1" max="65535" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="server-mode">Mode:</label>
+                        <select id="server-mode">
+                            <option value="caller">Caller</option>
+                            <option value="listener">Listener</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="server-latency">Latency (ms):</label>
+                        <input type="number" id="server-latency" value="120" min="20" max="8000">
+                    </div>
+                    <div class="form-group">
+                        <label for="server-passphrase">Passphrase (optional):</label>
+                        <input type="password" id="server-passphrase">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="cancel-server">Cancel</button>
+                <button type="submit" class="btn btn-primary" id="save-server">Save Server</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
